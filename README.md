@@ -18,7 +18,7 @@ python -m save_dictionary_embeddings.py --pretrained_model_name_or_path="stabili
 ```
 
 ## Training
-Create a new folder that contains an image. For example, download [our dataset](https://drive.google.com/drive/folders/1XvPE-UOwkYM7gVVTj9PlcoTQPKKaRbLn?usp=drive_link) and put it under the root path. You can change `--train_data_dir` in bash file `scripts/run.sh` to the image path. You can specify `--output_dir` to save the checkpoints. 
+Create a new folder that contains an image. For example, download [our dataset](https://drive.google.com/drive/folders/1XvPE-UOwkYM7gVVTj9PlcoTQPKKaRbLn?usp=drive_link) and put it under the root path. You can change `--train_data_dir` in bash file `scripts/run.sh` to the image path. You can specify `--output_dir` to save the checkpoints and generated images. 
 
 When the above is ready, run the following to start training:
 ```
