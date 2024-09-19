@@ -1,3 +1,8 @@
+"""
+Modified from:
+    Conceptor: https://github.com/hila-chefer/Conceptor
+"""
+
 import argparse
 import glob
 import logging
