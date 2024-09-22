@@ -1,6 +1,6 @@
 
 train_data_dir="../image"
-output_dir="../output/"
+output_dir="../output"
 vocabulary_path="../attr.txt"
 
 # params
