@@ -3,7 +3,7 @@ Modified from:
     Conceptor: https://github.com/hila-chefer/Conceptor
 """
 
-name: DOCS
+name: CUS
 channels:
   - pytorch
   - nvidia
