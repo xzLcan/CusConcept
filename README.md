@@ -6,7 +6,7 @@ This is the official PyTorch codes for the paper:
 [**CusDiff: Customized Visual Concept Decomposition with Diffusion Models**]
 
 ## Set-up
-Create a conda environment `CUS` using
+Create a conda environment `CUS` using:
 ```
 conda env create -f environment.yml
 conda activate CUS
@@ -17,7 +17,7 @@ conda activate CUS
 To avoid computing the CLIP text embeddings for the entire vocabulary each time we optimize a decomposition, this code is to extract the CLIP embedding for the entire vocabulary once, and save the embeddings such that you can load them for each concept.
 
 ```
-python save_dictionary_embeddings.py"
+python save_dictionary_embeddings.py
 ```
 
 ## Training
