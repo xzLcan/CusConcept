@@ -1,5 +1,5 @@
 # CusDiff
-![License](https://img.shields.io/github/license/haoosz/ConceptExpress?color=lightgray)
+![License](https://img.shields.io/badge/license-MIT-lightgray)
 
 This is the official PyTorch codes for the paper:  
 
