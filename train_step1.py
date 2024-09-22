@@ -646,8 +646,8 @@ def main():
             token_embeds = text_encoder.get_input_embeddings().weight
             alphas_obj = net_obj(vocabulary)
 
-            mask = torch.ones(500)
-            for i in range(500):
+            mask = torch.ones(args.vocabulary_size)
+            for i in range(args.vocabulary_size):
                 word = tokenizer.decode(vocabulary_indices[i])
                 if not nltk.pos_tag([word])[0][1].startswith('NN'):
                     mask[i] = 0

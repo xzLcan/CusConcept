@@ -69,7 +69,7 @@ def parse_args():
     parser.add_argument('--train_batch_size', type=int, default=6, help='Batch size for training.')
     parser.add_argument('--train_data_dir', type=str, default='image/time/ancient_statue/0', required=False, help='Directory for training data.')
     parser.add_argument('--output_dir', type=str, default='output', required=False, help='Output directory for results.')
-    parser.add_argument('--dictionary_size', type=int, default=500, help='Size of the dictionary.')
+    parser.add_argument('--vocabulary_size', type=int, default=500, help='Size of the vocabulary.')
     parser.add_argument('--num_explanation_tokens', type=int, default=50, help='Number of explanation tokens.')
     parser.add_argument('--validation_steps', type=int, default=10, help='Number of validation steps.')
     parser.add_argument('--learning_rate_attr', type=float, default=1e-2, help='Learning rate for the attribute network.')
@@ -78,7 +78,7 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=1000, help='Seed for randomness.')
     parser.add_argument('--word_size', type=int, default=22, help='Number of attribute words from LLM')
     parser.add_argument('--path_to_encoder_embeddings', type=str, default="./clip_text_encoding.pt", help='Path to the encoder embeddings.')
-    parser.add_argument('--dictionary_path', type=str, default='image/time/attr.txt', required = False, help='Path to the attribute words from LLM.')  
+    parser.add_argument('--vocabulary_path', type=str, default='image/time/attr.txt', required = False, help='Path to the attribute words from LLM.')  
     parser.add_argument('--saved_params', type=str, default="30_params.pt", help='Saved parameters from step1.')
     parser.add_argument('--embed_lr', type=float, default=1e-5, help='Learning rate for embedding.')
     parser.add_argument('--test_prompt', type=str, default="<>,[]", help='Prompt for validation.')
@@ -409,8 +409,8 @@ def get_clip_encodings(data_root):
 
     return target_image_encodings
 
-def get_dictionary_indices(
-    args, target_image_encodings, tokenizer, dictionary_size
+def get_vocabulary_indices(
+    args, target_image_encodings, tokenizer, vocabulary_size
 ):
     clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
     normalized_text_encodings = torch.load(args.path_to_encoder_embeddings)
@@ -425,8 +425,8 @@ def get_dictionary_indices(
     mean_cosine = torch.mean(cosine_similarities, dim=0)
     _, sorted_indices = torch.sort(mean_cosine, descending=True)
 
-    # Return the indices of the words to consider in the dictionary
-    return sorted_indices[:dictionary_size]
+    # Return the indices of the words to consider in the vocabulary
+    return sorted_indices[:vocabulary_size]
 
 
 class WeightLearningNetwork(nn.Module):
@@ -532,7 +532,7 @@ def main():
 
     # Initialize the MLP
     net_attr = WeightLearningNetwork(1024, args.word_size)
-    net_obj = WeightLearningNetwork(1024, args.dictionary_size)
+    net_obj = WeightLearningNetwork(1024, args.vocabulary_size)
     saved_data = torch.load(args.saved_params)
     net_attr.load_state_dict(saved_data['net_attr_state_dict'])
     net_obj.load_state_dict(saved_data['net_obj_state_dict'])
@@ -566,10 +566,10 @@ def main():
         args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
         overrode_max_train_steps = True
 
-    # Get dictionary
-    num_tokens = args.dictionary_size
+    # Get vocabulary
+    num_tokens = args.vocabulary_size
     target_image_encodings = get_clip_encodings(args.train_data_dir)
-    dictionary_indices = get_dictionary_indices(
+    vocabulary_indices = get_vocabulary_indices(
         args, target_image_encodings, tokenizer, num_tokens
     )
 
@@ -585,7 +585,7 @@ def main():
 
     # Get step1 embedding
     words_attr = []
-    with open(args.dictionary_path, 'r') as file:
+    with open(args.vocabulary_path, 'r') as file:
         for line in file:
             tokens = tokenizer.encode(line.strip(), add_special_tokens=False)
             words_attr.append(tokens)
@@ -593,7 +593,7 @@ def main():
     attr_embedding = orig_embeds_params[attr_token]
 
     target_image_encodings.detach_().requires_grad_(False)
-    dictionary = orig_embeds_params[dictionary_indices]
+    vocabulary = orig_embeds_params[vocabulary_indices]
 
     alphas_attr = net_attr(attr_embedding)
     _, sorted_attr = torch.sort(alphas_attr.abs(), descending =True)
@@ -602,10 +602,10 @@ def main():
     saved_emb_a = torch.mul(saved_emb_a, 1 / saved_emb_a.norm())
     saved_emb_a = torch.mul(saved_emb_a, avg_norm)
 
-    alphas_obj = net_obj(dictionary)
-    mask = torch.ones(500)
-    for i in range(500):
-        word = tokenizer.decode(dictionary_indices[i])
+    alphas_obj = net_obj(vocabulary)
+    mask = torch.ones(args.vocabulary_size)
+    for i in range(args.vocabulary_size):
+        word = tokenizer.decode(vocabulary_indices[i])
         if not nltk.pos_tag([word])[0][1].startswith('NN'):
             mask[i] = 0
     mask = mask.to("cuda:0")
@@ -615,7 +615,7 @@ def main():
 
     top_indices = [sorted_obj[i].item() for i in range(args.num_explanation_tokens)]
     saved_emb_o = torch.matmul(
-        masked_alphas_obj[top_indices], dictionary[top_indices]
+        masked_alphas_obj[top_indices], vocabulary[top_indices]
     )
     saved_emb_o = saved_emb_o.detach()
     saved_emb_o = torch.mul(saved_emb_o, 1 / saved_emb_o.norm())
@@ -699,7 +699,7 @@ def main():
 
     # Keep original embeddings as reference
     target_image_encodings.detach_().requires_grad_(False)
-    dictionary = orig_embeds_params[dictionary_indices]
+    vocabulary = orig_embeds_params[vocabulary_indices]
     
     net_attr.requires_grad_(True)
     net_obj.requires_grad_(True)
@@ -739,10 +739,10 @@ def main():
             emb_a = torch.mul(emb_a, 1 / emb_a.norm())
             emb_a = torch.mul(emb_a, avg_norm)
 
-            alphas_obj_1 = net_obj(dictionary)
-            mask = torch.ones(500)
-            for i in range(500):
-                word = tokenizer.decode(dictionary_indices[i])
+            alphas_obj_1 = net_obj(vocabulary)
+            mask = torch.ones(args.vocabulary_size)
+            for i in range(args.vocabulary_size):
+                word = tokenizer.decode(vocabulary_indices[i])
                 if not nltk.pos_tag([word])[0][1].startswith('NN'):
                     mask[i] = 0
             mask = mask.to("cuda:0")
@@ -750,14 +750,14 @@ def main():
             _, sorted_obj_1 = torch.sort(masked_alphas_obj_1.abs(), descending=True)
 
             top_objs_1 = [
-                tokenizer.decode(dictionary_indices[sorted_obj_1[i]])
+                tokenizer.decode(vocabulary_indices[sorted_obj_1[i]])
                 for i in range(50)
             ]
             top_indices_1 = [
                 sorted_obj_1[i].item() for i in range(args.num_explanation_tokens)
             ]
             emb_o = torch.matmul(
-                masked_alphas_obj_1[top_indices_1], dictionary[top_indices_1]
+                masked_alphas_obj_1[top_indices_1], vocabularys[top_indices_1]
             )
             emb_o = torch.mul(emb_o, 1 / emb_o.norm())
             emb_o = torch.mul(emb_o, avg_norm)
