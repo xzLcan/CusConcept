@@ -21,7 +21,6 @@ python ../step1.py --learning_rate_attr $learning_rate_attr \
 --output_dir $output_data\
 --vocabulary_path $vocabulary_path\
 
-echo "start step2"
 python ../step2.py --learning_rate_attr $learning_rate_attr \
 --learning_rate_obj $learning_rate_obj \
 --num_explanation_tokens $num_explanation_tokens_2 \
