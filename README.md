@@ -17,7 +17,7 @@ conda activate CUS
 To avoid computing the CLIP text embeddings for the entire vocabulary each time we optimize a decomposition, this code is to extract the CLIP embedding for the entire vocabulary once, and save the embeddings such that you can load them for each concept.
 
 ```
-python -m save_dictionary_embeddings.py --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-1-base" --path_to_encoder_embeddings="./clip_text_encoding.pt"
+python save_dictionary_embeddings.py --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-1-base" --path_to_encoder_embeddings="./clip_text_encoding.pt"
 ```
 
 ## Training
