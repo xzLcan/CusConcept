@@ -1,8 +1,3 @@
-"""
-Modified from:
-    Conceptor: https://github.com/hila-chefer/Conceptor
-"""
-
 import argparse
 import glob
 import logging
@@ -84,10 +79,11 @@ def parse_args():
     parser.add_argument('--word_size', type=int, default=22, help='Number of attribute words from LLM')
     parser.add_argument('--path_to_encoder_embeddings', type=str, default="./clip_text_encoding.pt", help='Path to the encoder embeddings.')
     parser.add_argument('--dictionary_path', type=str, default='image/time/attr.txt', required = False, help='Path to the attribute words from LLM.')  
-    parser.add_argument("--num_train_epochs", type=int, default=1000)
     parser.add_argument('--saved_params', type=str, default="30_params.pt", help='Saved parameters from step1.')
-    parser.add_argument('--embed_lr', type=float, default=1e-5)
+    parser.add_argument('--embed_lr', type=float, default=1e-5, help='Learning rate for embedding.')
     parser.add_argument('--test_prompt', type=str, default="<>,[]", help='Prompt for validation.')
+    parser.add_argument("--num_train_epochs", type=int, default=1000, help='How many epochs will be trained.')
+    parser.add_argument("--num_attr_take", type=int, default=10, help='How many attribute words are taken into consideration in calculation.')
     parser.add_argument(
         "--revision",
         type=str,
@@ -289,7 +285,7 @@ val_obj_templates = [
     "a photo of {tokens} floating on top of water"
 ]
 
-class DOCSDataset(Dataset):
+class CUSDataset(Dataset):
 
     def __init__(
         self,
@@ -457,11 +453,12 @@ class WeightLearningNetwork(nn.Module):
 
         return weights
 
+nltk.download('averaged_perceptron_tagger')
+nltk.download('wordnet')
+
 def main():
     args = parse_args()
     set_seed()
-    nltk.download('averaged_perceptron_tagger')
-    nltk.download('wordnet')
     
     logging_dir = os.path.join(args.output_dir, args.logging_dir)
 
@@ -543,7 +540,7 @@ def main():
     net_obj = net_obj.to("cuda:0")
 
     # create dataset and DataLoaders:
-    train_dataset = DOCSDataset(
+    train_dataset = CUSDataset(
         data_root=args.train_data_dir,
         tokenizer=tokenizer,
         size=args.resolution,
@@ -600,10 +597,10 @@ def main():
 
     alphas_attr = net_attr(attr_embedding)
     _, sorted_attr = torch.sort(alphas_attr.abs(), descending =True)
-    embedding_attr = torch.matmul(alphas_attr[sorted_attr[:10]], attr_embedding[sorted_attr[:10]])
-    embedding_attr = embedding_attr.detach()
-    embedding_attr = torch.mul(embedding_attr, 1 / embedding_attr.norm())
-    embedding_attr = torch.mul(embedding_attr, avg_norm)
+    saved_emb_a = torch.matmul(alphas_attr[sorted_attr[:args.num_attr_take]], attr_embedding[sorted_attr[:args.num_attr_take]])
+    saved_emb_a = saved_emb_a.detach()
+    saved_emb_a = torch.mul(saved_emb_a, 1 / saved_emb_a.norm())
+    saved_emb_a = torch.mul(saved_emb_a, avg_norm)
 
     alphas_obj = net_obj(dictionary)
     mask = torch.ones(500)
@@ -617,12 +614,12 @@ def main():
     _, sorted_obj = torch.sort(masked_alphas_obj.abs(), descending=True)
 
     top_indices = [sorted_obj[i].item() for i in range(args.num_explanation_tokens)]
-    top_embedding = torch.matmul(
+    saved_emb_o = torch.matmul(
         masked_alphas_obj[top_indices], dictionary[top_indices]
     )
-    top_embedding = top_embedding.detach()
-    top_embedding = torch.mul(top_embedding, 1 / top_embedding.norm())
-    top_embedding = torch.mul(top_embedding, avg_norm)
+    saved_emb_o = saved_emb_o.detach()
+    saved_emb_o = torch.mul(saved_emb_o, 1 / saved_emb_o.norm())
+    saved_emb_o = torch.mul(saved_emb_o, avg_norm)
 
     param_groups = [
         {
@@ -638,11 +635,11 @@ def main():
         'lr': args.learning_rate_obj
     })
     param_groups.append({
-        'params': embedding_attr,
+        'params': saved_emb_a,
         'lr': args.embed_lr
     })
     param_groups.append({
-        'params': top_embedding,
+        'params': saved_emb_o,
         'lr': args.embed_lr
     })
     optimizer = torch.optim.AdamW(param_groups)
@@ -654,9 +651,9 @@ def main():
         * args.gradient_accumulation_steps,
     )
 
-    text_encoder, optimizer, train_dataloader, lr_scheduler, net_attr, net_obj, embedding_attr, top_embedding = (
+    text_encoder, optimizer, train_dataloader, lr_scheduler, net_attr, net_obj, saved_emb_a, saved_emb_o = (
         accelerator.prepare(
-            text_encoder, optimizer, train_dataloader, lr_scheduler, net_attr, net_obj, embedding_attr, top_embedding
+            text_encoder, optimizer, train_dataloader, lr_scheduler, net_attr, net_obj, saved_emb_a, saved_emb_o
         )
     )
 
@@ -683,7 +680,7 @@ def main():
 
     # Initialize the trackers we use, and also store our configuration.
     if accelerator.is_main_process:
-        accelerator.init_trackers("DOCS", config=vars(args))
+        accelerator.init_trackers("CUS", config=vars(args))
 
     # Train
     total_batch_size = (
@@ -706,8 +703,8 @@ def main():
     
     net_attr.requires_grad_(True)
     net_obj.requires_grad_(True)
-    embedding_attr.requires_grad_(True)
-    top_embedding.requires_grad_(True)
+    saved_emb_a.requires_grad_(True)
+    saved_emb_o.requires_grad_(True)
 
     # create pipeline
     pipeline = DiffusionPipeline.from_pretrained(
@@ -725,22 +722,22 @@ def main():
     pipeline = pipeline.to(accelerator.device)
     pipeline.set_progress_bar_config(disable=True)
 
-    text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id-1] = embedding_attr
-    text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id] = top_embedding
+    text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id-1] = saved_emb_a
+    text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id] = saved_emb_o
 
     for epoch in range(first_epoch, args.num_train_epochs):
         text_encoder.train()
         for batch in train_dataloader:
             text_encoder.get_input_embeddings().weight.detach_().requires_grad_(False)
             net_attr.requires_grad_(True); net_obj.requires_grad_(True)
-            embedding_attr.requires_grad_(True); top_embedding.requires_grad_(True)
+            saved_emb_a.requires_grad_(True); saved_emb_o.requires_grad_(True)
 
             alphas_attr_1 = net_attr(attr_embedding)
             _, sorted_attr_1 = torch.sort(alphas_attr_1.abs(), descending =True)
             top_attrs_1 = [tokenizer.decode(attr_token[sorted_attr_1[i]]) for i in range(10)]
-            embedding_attr_1 = torch.matmul(alphas_attr_1[sorted_attr_1[:10]], attr_embedding[sorted_attr_1[:10]])
-            embedding_attr_1 = torch.mul(embedding_attr_1, 1 / embedding_attr_1.norm())
-            embedding_attr_1 = torch.mul(embedding_attr_1, avg_norm)
+            emb_a = torch.matmul(alphas_attr_1[sorted_attr_1[:args.num_attr_take]], attr_embedding[sorted_attr_1[:args.num_attr_take]])
+            emb_a = torch.mul(emb_a, 1 / emb_a.norm())
+            emb_a = torch.mul(emb_a, avg_norm)
 
             alphas_obj_1 = net_obj(dictionary)
             mask = torch.ones(500)
@@ -759,22 +756,22 @@ def main():
             top_indices_1 = [
                 sorted_obj_1[i].item() for i in range(args.num_explanation_tokens)
             ]
-            top_embedding_1 = torch.matmul(
+            emb_o = torch.matmul(
                 masked_alphas_obj_1[top_indices_1], dictionary[top_indices_1]
             )
-            top_embedding_1 = torch.mul(top_embedding_1, 1 / top_embedding_1.norm())
-            top_embedding_1 = torch.mul(top_embedding_1, avg_norm)
+            emb_o = torch.mul(emb_o, 1 / emb_o.norm())
+            emb_o = torch.mul(emb_o, avg_norm)
 
-            attr_out = torch.norm(embedding_attr - embedding_attr_1, p=2) ** 2
-            obj_out = torch.norm(top_embedding - top_embedding_1, p=2) ** 2
+            attr_out = torch.norm(saved_emb_a - emb_a, p=2) ** 2
+            obj_out = torch.norm(saved_emb_o - emb_o, p=2) ** 2
             loss_L2 = torch.mean(attr_out + obj_out)
 
-            text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id-1] = 0.5*(embedding_attr + embedding_attr_1)
-            text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id] = 0.5*(top_embedding + top_embedding_1)
+            text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id-1] = 0.5*(saved_emb_a + emb_a)
+            text_encoder.text_model.embeddings.token_embedding.weight[placeholder_token_id] = 0.5*(saved_emb_o + emb_o)
 
             text_encoder.get_input_embeddings().weight.requires_grad_(True)
 
-            with accelerator.accumulate([net_attr, net_obj, embedding_attr, top_embedding]):
+            with accelerator.accumulate([net_attr, net_obj, saved_emb_a, saved_emb_o]):
                 # Convert images to latent space
                 latents = (
                     vae.encode(batch["pixel_values"].to(dtype=weight_dtype))

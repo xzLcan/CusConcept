@@ -1,8 +1,3 @@
-"""
-Modified from:
-    Conceptor: https://github.com/hila-chefer/Conceptor
-"""
-
 import argparse
 import glob
 import logging
@@ -75,7 +70,7 @@ def parse_args():
     parser.add_argument('--train_batch_size', type=int, default=6, help='Batch size for training.')
     parser.add_argument('--train_data_dir', type=str, default='image/time/ancient_statue/0', required=False, help='Directory for training data.')
     parser.add_argument('--output_dir', type=str, default='output', required=False, help='Output directory for results.')
-    parser.add_argument('--dictionary_size', type=int, default=500, help='Size of the dictionary.')
+    parser.add_argument('--vocabulary_size', type=int, default=500, help='Size of the vocabulary.')
     parser.add_argument('--num_explanation_tokens', type=int, default=50, help='Number of explanation tokens.')
     parser.add_argument('--validation_steps', type=int, default=10, help='Number of validation steps.')
     parser.add_argument('--learning_rate_attr', type=float, default=1e-2, help='Learning rate for the attribute network.')
@@ -84,8 +79,9 @@ def parse_args():
     parser.add_argument('--seed', type=int, default=1000, help='Seed for randomness.')
     parser.add_argument('--word_size', type=int, default=22, help='Number of attribute words from LLM')
     parser.add_argument('--path_to_encoder_embeddings', type=str, default='./clip_text_encoding.pt', help='Path to the encoder embeddings.')
-    parser.add_argument('--dictionary_path', type=str, default='image/time/attr.txt', required = False, help='Path to the attribute words from LLM.')  
-    parser.add_argument("--num_train_epochs", type=int, default=1000)
+    parser.add_argument('--vocabulary_path', type=str, default='image/time/attr.txt', required = False, help='Path to the attribute words from LLM.')  
+    parser.add_argument("--num_train_epochs", type=int, default=1000, help='How many epochs will be trained.')
+    parser.add_argument("--num_attr_take", type=int, default=10, help='How many attribute words are taken into consideration in calculation.')
     parser.add_argument(
         "--revision",
         type=str,
@@ -259,7 +255,7 @@ def decode_latents(vae, latents):
     image = image.permute(0, 2, 3, 1)
     return image
 
-class DOCSDataset(Dataset):
+class CUSDataset(Dataset):
 
     def __init__(
         self,
@@ -383,8 +379,8 @@ def get_clip_encodings(data_root):
 
     return target_image_encodings
 
-def get_dictionary_indices(
-    args, target_image_encodings, tokenizer, dictionary_size
+def get_vocabulary_indices(
+    args, target_image_encodings, tokenizer, vocabulary_size
 ):
     clip_model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").to("cuda")
     normalized_text_encodings = torch.load(args.path_to_encoder_embeddings)
@@ -397,7 +393,7 @@ def get_dictionary_indices(
     mean_cosine = torch.mean(cosine_similarities, dim=0)
     _, sorted_indices = torch.sort(mean_cosine, descending=True)
 
-    return sorted_indices[:dictionary_size]
+    return sorted_indices[:vocabulary_size]
 
 class WeightLearningNetwork(nn.Module):
     def __init__(self, embedding_dim, sequence_length, hidden_dim=512):
@@ -504,7 +500,7 @@ def main():
 
     # Initialize the MLP
     net_attr = WeightLearningNetwork(1024, args.word_size)
-    net_obj = WeightLearningNetwork(1024, args.dictionary_size)
+    net_obj = WeightLearningNetwork(1024, args.vocabulary_size)
 
     # Initialize the optimizer
     optimizer = torch.optim.AdamW(
@@ -516,7 +512,7 @@ def main():
     )
 
     # Create dataset and DataLoaders:
-    train_dataset = DOCSDataset(
+    train_dataset = CUSDataset(
         data_root=args.train_data_dir,
         tokenizer=tokenizer,
         size=args.resolution,
@@ -577,7 +573,7 @@ def main():
 
     # Initialize the trackers we use, and also store our configuration.
     if accelerator.is_main_process:
-        accelerator.init_trackers("DOCS", config=vars(args))
+        accelerator.init_trackers("CUS", config=vars(args))
 
     # Train
     total_batch_size = (
@@ -606,18 +602,18 @@ def main():
     avg_norm = np.mean(norms)
     text_encoder.get_input_embeddings().weight.requires_grad_(False)
 
-    # Get dictionary
-    num_tokens = args.dictionary_size
+    # Get object vocabulary
+    num_tokens = args.vocabulary_size
     target_image_encodings = get_clip_encodings(args.train_data_dir)
-    dictionary_indices = get_dictionary_indices(
+    vocabulary_indices = get_vocabulary_indices(
         args, target_image_encodings, tokenizer, num_tokens
     )
     target_image_encodings.detach_().requires_grad_(False)
-    dictionary = orig_embeds_params[dictionary_indices]
+    vocabulary = orig_embeds_params[vocabulary_indices]
 
     # Get attribute embedding
     words_attr = []
-    with open(args.dictionary_path, 'r') as file:
+    with open(args.vocabulary_path, 'r') as file:
         for line in file:
             tokens = tokenizer.encode(line.strip(), add_special_tokens=False)
             words_attr.append(tokens)
@@ -648,11 +644,11 @@ def main():
 
             # calculate current embeddings
             token_embeds = text_encoder.get_input_embeddings().weight
-            alphas_obj = net_obj(dictionary)
+            alphas_obj = net_obj(vocabulary)
 
             mask = torch.ones(500)
             for i in range(500):
-                word = tokenizer.decode(dictionary_indices[i])
+                word = tokenizer.decode(vocabulary_indices[i])
                 if not nltk.pos_tag([word])[0][1].startswith('NN'):
                     mask[i] = 0
             mask = mask.to("cuda:0")
@@ -660,17 +656,18 @@ def main():
 
             _, sorted_obj = torch.sort(masked_alphas_obj.abs(), descending=True)
 
-            embedding = torch.matmul(masked_alphas_obj, dictionary)
-            embedding = torch.mul(embedding, 1 / embedding.norm())
-            embedding = torch.mul(embedding, avg_norm)
+            embedding_obj = torch.matmul(masked_alphas_obj, vocabulary)
+            embedding_obj = torch.mul(embedding_obj, 1 / embedding_obj.norm())
+            embedding_obj = torch.mul(embedding_obj, avg_norm)
 
             alphas_attr = net_attr(attr_embedding)
             _, sorted_attr = torch.sort(alphas_attr.abs(), descending =True)
-            embedding_attr = torch.matmul(alphas_attr[sorted_attr[:10]], attr_embedding[sorted_attr[:10]])
+            embedding_attr = torch.matmul(alphas_attr[sorted_attr[:args.num_attr_take]], attr_embedding[sorted_attr[:args.num_attr_take]])
             embedding_attr = torch.mul(embedding_attr, 1 / embedding_attr.norm())
             embedding_attr = torch.mul(embedding_attr, avg_norm)
+
             token_embeds[placeholder_token_id-1] = embedding_attr
-            token_embeds[placeholder_token_id] = embedding
+            token_embeds[placeholder_token_id] = embedding_obj
             text_encoder.get_input_embeddings().weight.requires_grad_(True)
 
             with accelerator.accumulate([net_attr, net_obj]):
@@ -724,10 +721,10 @@ def main():
                 ]
 
                 top_embedding = torch.matmul(
-                    masked_alphas_obj[top_indices], dictionary[top_indices]
+                    masked_alphas_obj[top_indices], vocabulary[top_indices]
                 )
                 obj_loss = 1 - torch.cosine_similarity(
-                    top_embedding.reshape(1, -1), embedding.reshape(1, -1)
+                    top_embedding.reshape(1, -1), embedding_obj.reshape(1, -1)
                 )
 
                 loss = mse_loss + 0.001 * obj_loss + mse_loss_obj

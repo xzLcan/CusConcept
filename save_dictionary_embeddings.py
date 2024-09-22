@@ -26,7 +26,7 @@ def parse_args():
     parser.add_argument(
         "--clip_model",
         type=str,
-        default="laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
+        default="openai/clip-vit-base-patch32",
         help=(
             "The CLIP model to use for the calculation of the image-text"
             " matching."
