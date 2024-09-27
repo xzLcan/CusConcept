@@ -80,7 +80,7 @@ def parse_args():
     parser.add_argument('--path_to_encoder_embeddings', type=str, default="./clip_text_encoding.pt", help='Path to the encoder embeddings.')
     parser.add_argument('--vocabulary_path', type=str, default='image/time/attr.txt', required = False, help='Path to the attribute words from LLM.')  
     parser.add_argument('--saved_params', type=str, default="30_params.pt", help='Saved parameters from step1.')
-    parser.add_argument('--embed_lr', type=float, default=1e-5, help='Learning rate for embedding.')
+    parser.add_argument('--embed_lr', type=float, default=1e-3, help='Learning rate for embedding.')
     parser.add_argument('--test_prompt', type=str, default="<>,[]", help='Prompt for validation.')
     parser.add_argument("--num_train_epochs", type=int, default=1000, help='How many epochs will be trained.')
     parser.add_argument("--num_attr_take", type=int, default=10, help='How many attribute words are taken into consideration in calculation.')
