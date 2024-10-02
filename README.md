@@ -8,7 +8,7 @@ This is the official PyTorch codes for the paper:
 [**CusConcept: Customized Visual Concept Decomposition with Diffusion Models**](https://arxiv.org/abs/2410.00398)  
 <a href="https://www.linkedin.com/in/zhi-xu-03764a28b/">Zhi Xu</a><sup>\*</sup>,
 <a href="https://haoosz.github.io/">Shaozhe Hao</a><sup>\*</sup>,
-<a href="https://www.kaihan.org/">Kai Han</a><sup>†</sup>,
+<a href="https://www.kaihan.org/">Kai Han</a><sup>†</sup>  
 *WACV 2025*
 ## Set-up
 Create a conda environment `CUS` using:
