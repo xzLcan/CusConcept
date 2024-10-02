@@ -5,7 +5,7 @@
 
 This is the official PyTorch codes for the paper:  
 
-[**CusConcept: Customized Visual Concept Decomposition with Diffusion Models**]
+[**CusConcept: Customized Visual Concept Decomposition with Diffusion Models**](https://arxiv.org/abs/2410.00398)
 
 ## Set-up
 Create a conda environment `CUS` using:
