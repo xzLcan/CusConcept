@@ -1,5 +1,7 @@
 # CusConcept
 ![License](https://img.shields.io/badge/license-MIT-lightgray)
+[![arXiv](https://img.shields.io/badge/arXiv-2410.00398%20-b31b1b)](https://arxiv.org/abs/2410.00398)
+
 
 This is the official PyTorch codes for the paper:  
 
