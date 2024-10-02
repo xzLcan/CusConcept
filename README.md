@@ -6,7 +6,9 @@
 This is the official PyTorch codes for the paper:  
 
 [**CusConcept: Customized Visual Concept Decomposition with Diffusion Models**](https://arxiv.org/abs/2410.00398)
-
+[Zhi Xu](https://www.linkedin.com/in/zhi-xu-03764a28b/),
+[Shaozhe Hao](https://haoosz.github.io/),
+[Kai Han](https://www.kaihan.org/)
 ## Set-up
 Create a conda environment `CUS` using:
 ```
@@ -33,6 +35,15 @@ bash scripts/run.sh
 ## Citation
 If you use this code in your research, please consider citing our paper:
 ```bibtex
+@misc{xu2024cusconceptcustomizedvisualconcept,
+      title={CusConcept: Customized Visual Concept Decomposition with Diffusion Models}, 
+      author={Zhi Xu and Shaozhe Hao and Kai Han},
+      year={2024},
+      eprint={2410.00398},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV},
+      url={https://arxiv.org/abs/2410.00398}, 
+}
 ```
 
 ## Acknowledgements
