@@ -36,8 +36,7 @@ bash scripts/run.sh
 ## Citation
 If you use this code in your research, please consider citing our paper:
 ```bibtex
-@misc{
-    xu2024cusconceptcustomizedvisualconcept,
+@misc{xu2024cusconceptcustomizedvisualconcept,
     title={CusConcept: Customized Visual Concept Decomposition with Diffusion Models}, 
     author={Zhi Xu and Shaozhe Hao and Kai Han},
     journal={arXiv preprint arXiv:2410.00398},
